@@ -80,17 +80,17 @@ class Car:
     def __init__(self, spawn_pos: Tuple[float, float], spawn_heading: float) -> None:
         self.state = CarState(position=Vec2(spawn_pos), velocity=Vec2(0, 0), heading=spawn_heading, angular_velocity=0.0)
         self.prev_position = Vec2(spawn_pos)
-        self.mass = 1200.0
-        self.engine_force = 65.0
-        self.brake_force = 80.0
-        self.reverse_force = 25.0
-        self.drag_coefficient = 0.42
-        self.rolling_resistance = 8.0
-        self.lateral_grip = 7.0
-        self.max_speed = 16.6  # ~60 km/h
-        self.max_reverse_speed = -3.5
-        self.max_steer = math.radians(28)
-        self.steer_speed = math.radians(120)
+        self.mass = 1100.0
+        self.engine_force = 5800.0
+        self.brake_force = 7600.0
+        self.reverse_force = 3200.0
+        self.drag_coefficient = 0.32
+        self.rolling_resistance = 5.0
+        self.lateral_grip = 8.5
+        self.max_speed = 22.2  # ~80 km/h
+        self.max_reverse_speed = -5.0
+        self.max_steer = math.radians(32)
+        self.steer_speed = math.radians(240)
         self.steer_angle = 0.0
 
     @property
@@ -118,9 +118,10 @@ class Car:
     def update(self, dt: float, inputs: Dict[str, float], surface_mu: float) -> None:
         self.prev_position = self.state.position.copy()
 
-        throttle = inputs.get("throttle", 0.0)
-        brake = inputs.get("brake", 0.0)
-        steer = inputs.get("steer", 0.0)
+        throttle = clamp(inputs.get("throttle", 0.0), -1.0, 1.0)
+        brake = clamp(inputs.get("brake", 0.0), 0.0, 1.0)
+        steer = clamp(inputs.get("steer", 0.0), -1.0, 1.0)
+        handbrake = inputs.get("handbrake", False)
 
         forward = self.forward
         right = self.right
@@ -131,19 +132,24 @@ class Car:
         speed = velocity.length()
 
         # Steering dynamics
-        target_steer = steer * self.max_steer
+        speed_ratio = clamp(abs(forward_speed) / max(self.max_speed, 1e-3), 0.0, 1.0)
+        dynamic_max_steer = self.max_steer * (0.35 + 0.65 * (1.0 - speed_ratio))
+        target_steer = clamp(steer * dynamic_max_steer, -dynamic_max_steer, dynamic_max_steer)
         steer_change = clamp(target_steer - self.steer_angle, -self.steer_speed * dt, self.steer_speed * dt)
         self.steer_angle += steer_change
 
         # Acceleration and braking
         acceleration = Vec2(0, 0)
-        if throttle > 0 and forward_speed < self.max_speed:
+        if throttle > 0.0 and forward_speed < self.max_speed:
             acceleration += forward * (self.engine_force * throttle * surface_mu / self.mass)
-        if brake > 0:
-            if forward_speed > 0:
-                acceleration += forward * (-self.brake_force * brake * surface_mu / self.mass)
+        elif throttle < 0.0:
+            if forward_speed > 1.0:
+                acceleration += forward * (-self.brake_force * -throttle * surface_mu / self.mass)
             else:
-                acceleration += forward * (self.reverse_force * brake * surface_mu / self.mass)
+                acceleration += forward * (self.reverse_force * throttle * surface_mu / self.mass)
+        if brake > 0.0:
+            braking_force = -self.brake_force * brake * surface_mu / self.mass
+            acceleration += forward * braking_force
 
         # Drag & rolling resistance
         if speed > 0.1:
@@ -152,7 +158,11 @@ class Car:
         acceleration += -velocity * (self.rolling_resistance / self.mass)
 
         # Lateral grip
-        lateral_force = -right * (lateral_speed * self.lateral_grip * surface_mu)
+        grip = self.lateral_grip * surface_mu
+        if handbrake:
+            grip *= 0.35
+            acceleration += forward * (-self.brake_force * 0.4 * surface_mu / self.mass)
+        lateral_force = -right * (lateral_speed * grip)
         acceleration += lateral_force / self.mass
 
         # Update velocity and position
@@ -432,9 +442,22 @@ class Game:
             steer -= 1.0
         if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
             steer += 1.0
-        throttle = 1.0 if keys[pygame.K_UP] or keys[pygame.K_w] else 0.0
-        brake = 1.0 if keys[pygame.K_DOWN] or keys[pygame.K_s] else 0.0
-        return {"steer": clamp(steer, -1.0, 1.0), "throttle": throttle, "brake": brake}
+
+        throttle = 0.0
+        if keys[pygame.K_UP] or keys[pygame.K_w]:
+            throttle += 1.0
+        if keys[pygame.K_DOWN] or keys[pygame.K_s]:
+            throttle -= 1.0
+
+        brake = 1.0 if keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT] else 0.0
+        handbrake = keys[pygame.K_SPACE]
+
+        return {
+            "steer": clamp(steer, -1.0, 1.0),
+            "throttle": clamp(throttle, -1.0, 1.0),
+            "brake": brake,
+            "handbrake": handbrake,
+        }
 
     def update(self, dt: float) -> None:
         inputs = self.handle_input()
@@ -583,8 +606,9 @@ class Game:
         paused = self.font_large.render("Paused", True, (240, 240, 240))
         help_lines = [
             "Controls:",
-            "Arrow/WASD to steer & accelerate",
-            "Down/S brake & reverse",
+            "Arrow/WASD to steer",
+            "Up/W throttle, Down/S reverse",
+            "Shift brake, Space handbrake",
             "Esc/P to pause",
             "1/2/3 change track",
         ]
