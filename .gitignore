@@ -1,0 +1,56 @@
+# Visual Studio
+.vs/
+*.vcxproj.user
+*.vcproj.*
+*.vcxproj.filters
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.VC.db
+*.VC.VC.opendb
+ipch/
+*.obj
+*.pdb
+*.exe
+*.cache
+*.log
+*.tlog
+*.idb
+*.ipdb
+*.iobj
+*.lastcodeanalysissucceeded
+*.ilk
+*.aps
+*.ncb
+*.opensdf
+*.sdf
+*.cachefile
+*.dbmdl
+x64/
+x86/
+Debug/
+DebugPublic/
+Release/
+Releases/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+[Bb][Ii][Nn]/
+[Oo][Bb][Jj]/
+Generated Files/
+_TestResults/
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.vspscc
+*.vssscc
+*.psess
+*.vspx
+*.vsmdi
+*.coverage
+*.coveragexml
+*.codeanalysis
+# Python
+__pycache__/
+*.py[cod]
+# Runtime records
+records.json
