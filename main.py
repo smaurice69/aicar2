@@ -86,12 +86,21 @@ class Car:
         self.reverse_force = 3200.0
         self.drag_coefficient = 0.32
         self.rolling_resistance = 5.0
-        self.lateral_grip = 8.5
         self.max_speed = 22.2  # ~80 km/h
         self.max_reverse_speed = -5.0
         self.max_steer = math.radians(32)
         self.steer_speed = math.radians(240)
         self.steer_angle = 0.0
+        self.wheel_base = 2.64
+        self.cg_to_front = 1.22
+        self.cg_to_rear = self.wheel_base - self.cg_to_front
+        self.inertia = 0.5 * self.mass * (self.LENGTH ** 2 + self.WIDTH ** 2)
+        weight = self.mass * 9.81
+        front_load = weight * self.cg_to_rear / self.wheel_base
+        rear_load = weight * self.cg_to_front / self.wheel_base
+        self.cornering_stiffness_front = front_load * 5.0
+        self.cornering_stiffness_rear = rear_load * 5.5
+        self.restitution = 0.35
 
     @property
     def forward(self) -> Vec2:
@@ -128,73 +137,108 @@ class Car:
 
         velocity = self.state.velocity
         forward_speed = velocity.dot(forward)
-        lateral_speed = velocity.dot(right)
-        speed = velocity.length()
-
-        # Steering dynamics
+        lateral_speed_right = velocity.dot(right)
+        # Steering dynamics with speed sensitivity
         speed_ratio = clamp(abs(forward_speed) / max(self.max_speed, 1e-3), 0.0, 1.0)
         dynamic_max_steer = self.max_steer * (0.35 + 0.65 * (1.0 - speed_ratio))
         target_steer = clamp(steer * dynamic_max_steer, -dynamic_max_steer, dynamic_max_steer)
         steer_change = clamp(target_steer - self.steer_angle, -self.steer_speed * dt, self.steer_speed * dt)
         self.steer_angle += steer_change
 
-        # Acceleration and braking
-        acceleration = Vec2(0, 0)
-        if throttle > 0.0 and forward_speed < self.max_speed:
-            acceleration += forward * (self.engine_force * throttle * surface_mu / self.mass)
+        # Transform velocity into the car's local frame (x forward, y left)
+        vx = forward_speed
+        vy = -lateral_speed_right
+        yaw_rate = self.state.angular_velocity
+
+        effective_vx = vx if abs(vx) > 0.5 else (0.5 if vx >= 0 else -0.5)
+
+        # Longitudinal forces
+        Fx = 0.0
+        if throttle > 0.0 and vx < self.max_speed:
+            Fx += self.engine_force * throttle * surface_mu
         elif throttle < 0.0:
-            if forward_speed > 1.0:
-                acceleration += forward * (-self.brake_force * -throttle * surface_mu / self.mass)
+            if vx > 1.0:
+                Fx -= self.brake_force * (-throttle) * surface_mu
             else:
-                acceleration += forward * (self.reverse_force * throttle * surface_mu / self.mass)
+                Fx += self.reverse_force * throttle * surface_mu
         if brake > 0.0:
-            braking_force = -self.brake_force * brake * surface_mu / self.mass
-            acceleration += forward * braking_force
+            brake_force = self.brake_force * brake * surface_mu
+            if vx > 0.5:
+                Fx -= brake_force
+            elif vx < -0.5:
+                Fx += brake_force
+            else:
+                Fx -= brake_force * (vx / 0.5)
 
-        # Drag & rolling resistance
-        if speed > 0.1:
-            drag = -velocity.normalize() * self.drag_coefficient * speed * speed / self.mass
-            acceleration += drag
-        acceleration += -velocity * (self.rolling_resistance / self.mass)
+        Fx -= self.drag_coefficient * vx * abs(vx)
+        Fx -= self.rolling_resistance * vx
 
-        # Lateral grip
-        grip = self.lateral_grip * surface_mu
+        traction_limit = surface_mu * self.mass * 9.81 * 0.6
+        Fx = clamp(Fx, -traction_limit, traction_limit)
+
+        # Lateral tyre forces from a simple bicycle model
+        weight = self.mass * 9.81
+        front_load = weight * self.cg_to_rear / self.wheel_base
+        rear_load = weight * self.cg_to_front / self.wheel_base
+
+        cornering_front = self.cornering_stiffness_front * surface_mu
+        cornering_rear = self.cornering_stiffness_rear * surface_mu
+        rear_mu = surface_mu
         if handbrake:
-            grip *= 0.35
-            acceleration += forward * (-self.brake_force * 0.4 * surface_mu / self.mass)
-        lateral_force = -right * (lateral_speed * grip)
-        acceleration += lateral_force / self.mass
+            cornering_rear *= 0.25
+            rear_mu *= 0.4
+            Fx *= 0.7
 
-        # Update velocity and position
-        velocity += acceleration * dt
-        forward_speed = velocity.dot(forward)
-        if forward_speed > self.max_speed:
-            velocity -= forward * (forward_speed - self.max_speed)
-        if velocity.dot(forward) < self.max_reverse_speed:
-            forward_component = forward * self.max_reverse_speed
-            lateral_component = velocity - forward_component
-            velocity = forward_component + lateral_component
+        slip_front = math.atan2(vy + self.cg_to_front * yaw_rate, effective_vx) - self.steer_angle
+        slip_rear = math.atan2(vy - self.cg_to_rear * yaw_rate, effective_vx)
 
-        self.state.velocity = velocity
+        Fy_front = clamp(-cornering_front * slip_front, -front_load * surface_mu, front_load * surface_mu)
+        Fy_rear = clamp(-cornering_rear * slip_rear, -rear_load * rear_mu, rear_load * rear_mu)
 
-        # Heading update via bicycle model
-        if abs(forward_speed) > 0.2:
-            turn_rate = forward_speed / self.LENGTH * math.tan(self.steer_angle) * surface_mu
-        else:
-            turn_rate = 0.0
-        self.state.angular_velocity = turn_rate
-        self.state.heading += turn_rate * dt
+        # Body frame accelerations
+        ax = (Fx - Fy_front * math.sin(self.steer_angle)) / self.mass + yaw_rate * vy
+        ay = (Fy_front * math.cos(self.steer_angle) + Fy_rear) / self.mass - yaw_rate * vx
+
+        # Additional lateral damping for stability
+        ay -= (self.rolling_resistance * vy) / self.mass
+
+        vx += ax * dt
+        vy += ay * dt
+
+        vx = clamp(vx, self.max_reverse_speed, self.max_speed)
+        if abs(vx) < 0.05 and abs(vy) < 0.05 and abs(Fx) < 50:
+            vx = 0.0
+            vy *= 0.5
+
+        # Yaw dynamics
+        yaw_accel = (self.cg_to_front * Fy_front * math.cos(self.steer_angle) - self.cg_to_rear * Fy_rear) / max(self.inertia, 1e-3)
+        yaw_rate += yaw_accel * dt
+        yaw_rate *= 0.995  # mild damping to stabilise oscillations
+
+        self.state.angular_velocity = yaw_rate
+        self.state.heading += yaw_rate * dt
+
+        # Transform velocity back to world frame
+        new_forward = self.forward
+        new_right = self.right
+        self.state.velocity = new_forward * vx - new_right * vy
 
         self.state.position += self.state.velocity * dt * 20  # convert to pixels
 
     def resolve_collision(self, normal: Vec2) -> None:
-        # Remove velocity component along the normal and dampen speed
+        if normal.length_squared() == 0:
+            return
+        normal = normal.normalize()
         vel = self.state.velocity
         normal_component = vel.dot(normal)
-        vel -= normal * normal_component
-        self.state.velocity = vel * 0.5
-        self.state.position = self.prev_position
-        self.state.angular_velocity *= 0.5
+        if normal_component > 0:
+            normal = -normal
+            normal_component = vel.dot(normal)
+        reflected = vel - (1.0 + self.restitution) * normal_component * normal
+        tangential_component = reflected - normal * reflected.dot(normal)
+        self.state.velocity = tangential_component * 0.85 + normal * reflected.dot(normal)
+        self.state.angular_velocity *= -0.4
+        self.state.position = self.prev_position + normal * 4.0
 
 
 class Track:
