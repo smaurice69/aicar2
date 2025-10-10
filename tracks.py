@@ -1,4 +1,4 @@
-"""Track definitions for the vector-style racing game."""
+"""Track definitions for the streamlined racing game."""
 
 from __future__ import annotations
 
@@ -27,7 +27,6 @@ class TrackDefinition:
     checkpoints: List[Dict[str, object]]
     surfaces: List[Dict[str, object]]
     walls: List[Tuple[Point, Point]]
-    minimap_bounds: Tuple[Point, Point]
 
 
 def harbor_run() -> TrackDefinition:
@@ -84,18 +83,19 @@ def harbor_run() -> TrackDefinition:
     start_line = {
         "points": ((360, 640), (520, 640)),
         "direction": (0.0, -1.0),
+        "width": 280,
     }
 
     checkpoints = [
-        {"points": ((860, 700), (860, 560)), "direction": (-1.0, -0.1)},
-        {"points": ((980, 260), (840, 220)), "direction": (-0.8, 0.2)},
-        {"points": ((240, 420), (340, 420)), "direction": (0.8, 0.0)},
+        {"points": ((860, 700), (860, 560)), "direction": (-1.0, -0.1), "width": 280},
+        {"points": ((980, 260), (840, 220)), "direction": (-0.8, 0.2), "width": 280},
+        {"points": ((240, 420), (340, 420)), "direction": (0.8, 0.0), "width": 280},
     ]
 
     surfaces = [
-        {"polygon": asphalt_loop, "type": "asphalt", "mu": 1.0, "color": (72, 78, 92)},
-        {"polygon": inner_harbor, "type": "water", "mu": 0.2, "color": (35, 55, 90)},
-        {"polygon": gravel_cut, "type": "gravel", "mu": 0.55, "color": (128, 106, 82)},
+        {"polygon": asphalt_loop, "type": "asphalt", "color": (72, 78, 92)},
+        {"polygon": inner_harbor, "type": "water", "color": (35, 55, 90)},
+        {"polygon": gravel_cut, "type": "gravel", "color": (128, 106, 82)},
     ]
 
     return TrackDefinition(
@@ -107,7 +107,6 @@ def harbor_run() -> TrackDefinition:
         checkpoints=checkpoints,
         surfaces=surfaces,
         walls=walls,
-        minimap_bounds=((80, 120), (1320, 780)),
     )
 
 
@@ -170,18 +169,19 @@ def canyon_loop() -> TrackDefinition:
     start_line = {
         "points": ((520, 720), (680, 720)),
         "direction": (0.0, -1.0),
+        "width": 280,
     }
 
     checkpoints = [
-        {"points": ((960, 620), (840, 500)), "direction": (-0.6, -0.2)},
-        {"points": ((960, 360), (840, 260)), "direction": (-0.6, 0.2)},
-        {"points": ((320, 440), (440, 360)), "direction": (0.5, -0.1)},
+        {"points": ((960, 620), (840, 500)), "direction": (-0.6, -0.2), "width": 280},
+        {"points": ((960, 360), (840, 260)), "direction": (-0.6, 0.2), "width": 280},
+        {"points": ((320, 440), (440, 360)), "direction": (0.5, -0.1), "width": 280},
     ]
 
     surfaces = [
-        {"polygon": outer, "type": "asphalt", "mu": 1.0, "color": (78, 74, 88)},
-        {"polygon": inner, "type": "canyon_floor", "mu": 0.15, "color": (52, 46, 58)},
-        {"polygon": gravel_shelf, "type": "gravel", "mu": 0.6, "color": (140, 120, 96)},
+        {"polygon": outer, "type": "asphalt", "color": (78, 74, 88)},
+        {"polygon": inner, "type": "canyon_floor", "color": (52, 46, 58)},
+        {"polygon": gravel_shelf, "type": "gravel", "color": (140, 120, 96)},
     ]
 
     return TrackDefinition(
@@ -193,7 +193,6 @@ def canyon_loop() -> TrackDefinition:
         checkpoints=checkpoints,
         surfaces=surfaces,
         walls=walls,
-        minimap_bounds=((120, 180), (1220, 820)),
     )
 
 
@@ -265,21 +264,22 @@ def industrial_sprint() -> TrackDefinition:
     start_line = {
         "points": ((500, 720), (660, 720)),
         "direction": (0.0, -1.0),
+        "width": 280,
     }
 
     checkpoints = [
-        {"points": ((980, 680), (980, 540)), "direction": (-1.0, -0.1)},
-        {"points": ((1080, 360), (920, 360)), "direction": (-0.9, 0.0)},
-        {"points": ((320, 320), (480, 320)), "direction": (0.8, 0.2)},
+        {"points": ((980, 680), (980, 540)), "direction": (-1.0, -0.1), "width": 280},
+        {"points": ((1080, 360), (920, 360)), "direction": (-0.9, 0.0), "width": 280},
+        {"points": ((320, 320), (480, 320)), "direction": (0.8, 0.2), "width": 280},
     ]
 
     surfaces: List[Dict[str, object]] = [
-        {"polygon": outer, "type": "asphalt", "mu": 0.95, "color": (68, 68, 74)},
-        {"polygon": inner_block, "type": "building", "mu": 0.1, "color": (40, 42, 48)},
+        {"polygon": outer, "type": "asphalt", "color": (68, 68, 74)},
+        {"polygon": inner_block, "type": "building", "color": (40, 42, 48)},
     ]
 
     for patch in gravel_patches:
-        surfaces.append({"polygon": patch, "type": "gravel", "mu": 0.55, "color": (134, 116, 90)})
+        surfaces.append({"polygon": patch, "type": "gravel", "color": (134, 116, 90)})
 
     return TrackDefinition(
         track_id="industrial_sprint",
@@ -290,10 +290,12 @@ def industrial_sprint() -> TrackDefinition:
         checkpoints=checkpoints,
         surfaces=surfaces,
         walls=walls,
-        minimap_bounds=((140, 160), (1220, 820)),
     )
 
 
-def all_tracks() -> List[TrackDefinition]:
+def load_tracks() -> List[TrackDefinition]:
     return [harbor_run(), canyon_loop(), industrial_sprint()]
 
+
+def all_tracks() -> List[TrackDefinition]:  # Backwards compatibility
+    return load_tracks()
